@@ -1,3 +1,4 @@
-streamlit
+uestsstreamlit
 pandas
 openpyxl
+requests
