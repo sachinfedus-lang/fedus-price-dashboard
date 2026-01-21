@@ -3,92 +3,64 @@ import pandas as pd
 import requests
 from io import BytesIO
 
-# ---------------------------
-# Page configuration
-# ---------------------------
-st.set_page_config(
-    page_title="Fedus Master Price List",
-    layout="wide",
-    page_icon="🔌"
-)
+# 1. Page Configuration
+st.set_page_config(page_title="Fedus Master Price List", layout="wide", page_icon="🔌")
 
 st.title("🔌 Fedus Master Price List")
 st.markdown("### Search across all 25+ categories | Updated Live")
 
-# ---------------------------
-# Google Sheet configuration
-# ---------------------------
-SHEET_ID = "1yccQUPQh8X_JZg8W8BeJQHZVPan6zb1c"
-URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=xlsx"
+# 2. Connection Setup (Using your new Published ID)
+# We convert the 'pubhtml' link into a 'pub?output=xlsx' data link
+PUBLISHED_ID = "2PACX-1vTYXjBUAeE7-cuVA8tOk5q0rMlFgy0Zy98QB3Twlyth5agxLi9cCRDpG-JumnY_3w"
+DATA_URL = f"https://docs.google.com/spreadsheets/d/e/{PUBLISHED_ID}/pub?output=xlsx"
 
-# ---------------------------
-# Data loader
-# ---------------------------
 @st.cache_data(ttl=600)
-def load_all_sheets():
-    headers = {"User-Agent": "Mozilla/5.0"}
-    response = requests.get(URL, headers=headers, timeout=30)
-
-    if response.status_code == 200:
-        return pd.read_excel(
-            BytesIO(response.content),
-            sheet_name=None,
-            engine="openpyxl",
-            skiprows=1
-        )
-    elif response.status_code == 401:
-        st.error("❌ Google Sheet access denied (401). Make sure the sheet is PUBLIC.")
-        return None
-    else:
-        st.error(f"❌ Failed to download sheet. Status code: {response.status_code}")
+def get_all_data():
+    try:
+        # Standard headers to ensure a smooth connection
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(DATA_URL, headers=headers)
+        if response.status_code == 200:
+            # Reads all sheets. skiprows=1 skips your top blue row (Row 1)
+            return pd.read_excel(BytesIO(response.content), sheet_name=None, skiprows=1)
+        else:
+            st.error(f"Google Connection Failed (Status {response.status_code}).")
+            return None
+    except Exception as e:
+        st.error(f"Error downloading data: {e}")
         return None
 
-# ---------------------------
-# Main app
-# ---------------------------
-with st.spinner("Syncing all 25+ Fedus categories..."):
-    all_sheets = load_all_sheets()
+# 3. Running the Dashboard logic
+all_data = get_all_data()
 
-if not all_sheets:
-    st.stop()
+if all_data:
+    sheet_names = list(all_data.keys())
+    
+    # Sidebar Category Navigation
+    st.sidebar.header("Navigation")
+    selection = st.sidebar.selectbox("📂 Select Category", sheet_names)
+    
+    # Get the dataframe for the selected sheet
+    df = all_data[selection]
 
-sheet_names = list(all_sheets.keys())
+    # Search Bar - Filters the 'Title' column as seen in your sheet
+    search_query = st.text_input(f"🔍 Search in {selection}...", placeholder="e.g. Cat 6, 100M...")
 
-# Sidebar
-st.sidebar.header("Navigation")
-selected_sheet = st.sidebar.selectbox("📂 Select Category", sheet_names)
+    if search_query:
+        # We ensure Title is treated as a string before searching
+        df = df[df['Title'].astype(str).str.contains(search_query, case=False, na=False)]
 
-df = all_sheets[selected_sheet]
-
-# Search
-search_query = st.text_input(
-    f"🔍 Search in {selected_sheet}...",
-    placeholder="Search product name, title, SKU, etc."
-)
-
-if search_query:
-    df = df[df.astype(str).apply(
-        lambda row: row.str.contains(search_query, case=False, na=False)
-    ).any(axis=1)]
-
-# ---------------------------
-# Display table safely
-# ---------------------------
-column_config = {}
-
-if "Image" in df.columns:
-    column_config["Image"] = st.column_config.ImageColumn("Preview")
-
-if "PRODUCT Gallery" in df.columns:
-    column_config["PRODUCT Gallery"] = st.column_config.LinkColumn(
-        "Gallery",
-        display_text="Open Gallery"
+    # 4. Final Table Display
+    # This turns your 'Image' column into pictures and 'PRODUCT Gallery' into buttons
+    st.dataframe(
+        df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Image": st.column_config.ImageColumn("Preview"),
+            "PRODUCT Gallery": st.column_config.LinkColumn("Gallery", display_text="Open Gallery")
+        }
     )
-
-st.dataframe(
-    df,
-    use_container_width=True,
-    hide_index=True,
-    column_config=column_config if column_config else None
-)
+else:
+    st.warning("Waiting for data from Google Sheets... please refresh in 30 seconds.")
 
