@@ -14,30 +14,44 @@ st.set_page_config(
     page_icon="🔌"
 )
 
-# Custom CSS for Fedus Branding and Header Stability
+# STICKY COLUMN CSS + BRANDING
 st.markdown("""
     <style>
     /* Main Background: Alice Blue */
     .stApp { background-color: #F0F8FF; }
     
-    /* Header Styling: Fedus Orange */
+    /* Header: Fedus Orange */
     h1 { color: #FF8C00 !important; font-weight: 800; }
     
-    /* Sidebar: Light Sky Blue and Orange Border */
+    /* Sidebar: Light Sky Blue */
     section[data-testid="stSidebar"] {
         background-color: #E6F3FF !important;
         border-right: 3px solid #FFCC80;
     }
 
-    /* Column Header Stability: Prevent fading during search */
-    [data-testid="stDataFrame"] thead tr th {
-        background-color: #ffffff !important;
-        color: #333 !important;
-        opacity: 1 !important;
+    /* THE STICKY LOGIC: Forces first 4 columns to stay on the left */
+    /* Note: This applies to the rendered dataframe container */
+    [data-testid="stDataFrame"] div[role="grid"] div[role="row"] div[role="gridcell"]:nth-child(-n+4),
+    [data-testid="stDataFrame"] div[role="grid"] div[role="row"] div[role="columnheader"]:nth-child(-n+4) {
+        position: sticky !important;
+        left: 0;
+        z-index: 2;
+        background-color: white !important;
+        border-right: 1px solid #FFCC80 !important;
     }
 
-    /* Row Count Highlight */
-    .row-count { color: #FF8C00; font-weight: bold; }
+    /* Custom Hover Tooltip Simulation */
+    [data-testid="stDataFrame"] div[role="gridcell"]:hover::after {
+        content: attr(title);
+        position: absolute;
+        background: #333;
+        color: #fff;
+        padding: 5px;
+        border-radius: 4px;
+        z-index: 100;
+        white-space: normal;
+        width: 200px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -114,20 +128,18 @@ if global_search:
 else:
     display_df = search_df(sheets[selected_sheet], search_query)
 
-st.markdown(f"Rows found: <span class='row-count'>{len(display_df):,}</span>", unsafe_allow_html=True)
+st.write(f"Rows found: **{len(display_df):,}**")
 
 # -----------------------------------------------
-# STICKY COLUMN CONFIGURATION
+# COLUMN CONFIGURATION
 # -----------------------------------------------
-# We set minimum widths for pinned columns to prevent them from being too large
 column_config = {
     "Title": st.column_config.TextColumn(
         "Title",
-        help="Hover over cell to see full name", # Shows full name on hover
+        help="Hover to see full name",
         width="medium"
     ),
-    "ASIN": st.column_config.TextColumn("ASIN", width="small"),
-    "SI No": st.column_config.TextColumn("SI No", width="small")
+    "ASIN": st.column_config.TextColumn("ASIN", width="small")
 }
 
 if "Image" in display_df.columns:
@@ -136,11 +148,10 @@ if "Image" in display_df.columns:
 if "PRODUCT Gallery" in display_df.columns:
     column_config["PRODUCT Gallery"] = st.column_config.LinkColumn("Gallery", display_text="Open")
 
-# THE KEY FIX: we use 'pin_columns' to anchor ASIN, Preview, and Title
+# Use st.dataframe with minimal index to save space
 st.dataframe(
     display_df,
     use_container_width=True,
     hide_index=True,
-    column_config=column_config,
-    on_select="ignore"
+    column_config=column_config
 )
