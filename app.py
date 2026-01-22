@@ -28,25 +28,22 @@ st.markdown("""
         border-right: 2px solid #FFCC80;
     }
 
-    /* Force table cells to hide overflow and show ellipsis (...) */
+    /* Tooltip behavior for better visibility */
     div[data-testid="stDataFrame"] td {
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        max-width: 150px; /* Limits the width visually */
+        cursor: help;
     }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🔌 Fedus Master Price List")
-st.markdown("### Search Categories | <span style='color: #FF8C00;'>Live Sync</span>", unsafe_allow_html=True)
+st.markdown("### Master Dashboard | <span style='color: #FF8C00;'>Live Sync Active</span>", unsafe_allow_html=True)
 
 # -------------------------------------------------
-# Data Loading (LOGIC UNCHANGED)
+# Data Loading (TTL updated to 60 seconds)
 # -------------------------------------------------
 XLSX_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTYXjBUAeE7-cuVA8tOk5q0rMlFgy0Zy98QB3Twlyth5agxLi9cCRDpG-JumnY_3w/pub?output=xlsx"
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=60) # Syncs changes from Google Sheets every 1 minute
 def load_all_sheets(url: str):
     session = requests.Session()
     retries = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
@@ -58,11 +55,11 @@ def load_all_sheets(url: str):
         sheets = pd.read_excel(BytesIO(r.content), sheet_name=None, engine="openpyxl", skiprows=1)
     return {name: df for name, df in sheets.items() if df is not None and not df.empty}
 
-with st.spinner("Syncing Fedus Categories..."):
+with st.spinner("Fetching latest prices..."):
     try:
         sheets = load_all_sheets(XLSX_URL)
     except Exception as e:
-        st.error(f"❌ Connection Error: {e}")
+        st.error(f"❌ Sync Error: {e}")
         st.stop()
 
 # -------------------------------------------------
@@ -88,17 +85,14 @@ else:
     display_df = search_df(sheets[selected_sheet], search_query)
 
 # -----------------------------------------------
-# COMPACT COLUMN CONFIGURATION
+# STICKY COLUMN CONFIGURATION
 # -----------------------------------------------
 column_config = {
     "Title": st.column_config.TextColumn(
         "Title",
-        help="HOVER HERE: View full product name", # Tooltip for long names
-        width="small",  # Minimal width
-    ),
-    "Available Color": st.column_config.TextColumn(
-        "Color",
-        width="small"
+        help="Full product name (Sticky)", 
+        width="medium",
+        required=True
     )
 }
 
@@ -108,10 +102,11 @@ if "Image" in display_df.columns:
 if "PRODUCT Gallery" in display_df.columns:
     column_config["PRODUCT Gallery"] = st.column_config.LinkColumn("Gallery", display_text="Open", width="small")
 
-# Using the native dataframe with pinned headers
+# Using the native dataframe with Pinned (Sticky) Title
 st.dataframe(
     display_df,
     use_container_width=True,
     hide_index=True,
-    column_config=column_config
+    column_config=column_config,
+    on_select="ignore" # Keeps interface stable during scrolling
 )
