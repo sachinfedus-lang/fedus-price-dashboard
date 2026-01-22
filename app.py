@@ -6,7 +6,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 # -------------------------------------------------
-# Page config
+# Page config & BEAUTIFICATION (Light Blue & Orange)
 # -------------------------------------------------
 st.set_page_config(
     page_title="Fedus Master Price List",
@@ -14,8 +14,40 @@ st.set_page_config(
     page_icon="🔌"
 )
 
+# Custom CSS for Fedus Branding
+st.markdown("""
+    <style>
+    /* Main Background and Text */
+    .stApp {
+        background-color: #f0f8ff; /* Light Alice Blue */
+    }
+    
+    /* Header Styling */
+    h1 {
+        color: #ff8c00; /* Dark Orange */
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    
+    /* Sidebar Styling */
+    section[data-testid="stSidebar"] {
+        background-color: #e6f3ff; /* Light Sky Blue */
+        border-right: 2px solid #ffcc80; /* Light Orange Border */
+    }
+    
+    /* Custom tooltips for long titles */
+    [data-testid="stDataFrame"] td:hover {
+        cursor: help;
+    }
+    
+    /* Search box styling */
+    .stTextInput>div>div>input {
+        border: 2px solid #ffcc80;
+    }
+    </style>
+    """, unsafe_allow_index=True)
+
 st.title("🔌 Fedus Master Price List")
-st.markdown("### Search across all 25+ categories | Updated Live")
+st.markdown("### Search across all 25+ categories | <span style='color: #ff8c00;'>Updated Live</span>", unsafe_allow_index=True)
 
 # -------------------------------------------------
 # Published XLSX URL (entire document)
@@ -27,56 +59,46 @@ XLSX_URL = (
 )
 
 # -------------------------------------------------
-# Robust downloader with retry + streaming
+# Robust downloader with retry + streaming (LOGIC UNCHANGED)
 # -------------------------------------------------
 @st.cache_data(ttl=600)
 def download_xlsx_streaming(url: str) -> bytes:
     session = requests.Session()
-
     retries = Retry(
         total=3,
         backoff_factor=1,
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=["GET"]
     )
-
     session.mount("https://", HTTPAdapter(max_retries=retries))
-
     headers = {"User-Agent": "Mozilla/5.0"}
-
     with session.get(url, headers=headers, stream=True, timeout=60) as r:
         r.raise_for_status()
-
         buffer = BytesIO()
         for chunk in r.iter_content(chunk_size=8192):
             if chunk:
                 buffer.write(chunk)
-
         return buffer.getvalue()
 
 # -------------------------------------------------
-# Load all sheets safely
+# Load all sheets safely (Logic preserved + skiprows for headers)
 # -------------------------------------------------
 @st.cache_data(ttl=600)
 def load_all_sheets(url: str):
     raw_bytes = download_xlsx_streaming(url)
-
     sheets = pd.read_excel(
         BytesIO(raw_bytes),
         sheet_name=None,
-        engine="openpyxl"
+        engine="openpyxl",
+        skiprows=1 # Skips the blue bar to keep headers visible
     )
-
-    # Filter out empty / invalid sheets
     clean = {
         name: df
         for name, df in sheets.items()
         if df is not None and not df.empty and len(df.columns) > 0
     }
-
     if not clean:
         raise RuntimeError("All sheets were empty or unreadable.")
-
     return clean
 
 # -------------------------------------------------
@@ -100,7 +122,7 @@ global_search = st.sidebar.checkbox("🔍 Search across ALL categories")
 
 search_query = st.text_input(
     "🔍 Search products",
-    placeholder="Search across any column"
+    placeholder="Type here to search (e.g. Cat 6, Blue...)"
 )
 
 def search_df(df, query):
@@ -121,21 +143,28 @@ if global_search:
         temp = df.copy()
         temp.insert(0, "Category", name)
         combined.append(temp)
-
     display_df = pd.concat(combined, ignore_index=True, sort=False)
     display_df = search_df(display_df, search_query)
     st.subheader("🔎 Global Search Results")
-
 else:
     display_df = search_df(sheets[selected_sheet], search_query)
     st.subheader(f"📂 Category: {selected_sheet}")
 
-st.write(f"Rows: **{len(display_df):,}**")
+# Display Row Count with orange highlight
+st.markdown(f"Rows found: **<span style='color: #ff8c00;'>{len(display_df):,}</span>**", unsafe_allow_index=True)
 
-# -------------------------------------------------
-# Column config (safe)
-# -------------------------------------------------
-column_config = {}
+# -----------------------------------------------
+# Column configuration (Tooltips and Static Headers)
+# -----------------------------------------------
+column_config = {
+    # This configuration helps with cell width and tooltips
+    "Title": st.column_config.TextColumn(
+        "Title",
+        help="Hover to see the full product title",
+        width="large"
+    )
+}
+
 if "Image" in display_df.columns:
     column_config["Image"] = st.column_config.ImageColumn("Preview")
 
@@ -144,12 +173,10 @@ if "PRODUCT Gallery" in display_df.columns:
         "Gallery", display_text="Open"
     )
 
+# The dataframe with pinned headers (standard in current Streamlit)
 st.dataframe(
     display_df,
     use_container_width=True,
     hide_index=True,
-    column_config=column_config if column_config else None
+    column_config=column_config
 )
-
-
-
