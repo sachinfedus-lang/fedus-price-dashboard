@@ -14,43 +14,47 @@ st.set_page_config(
     page_icon="🔌"
 )
 
-# Custom CSS for Fedus Branding
+# FIXED: Changed unsafe_allow_index to unsafe_allow_html
 st.markdown("""
     <style>
-    /* Main Background and Text */
+    /* Main Background: Alice Blue */
     .stApp {
-        background-color: #f0f8ff; /* Light Alice Blue */
+        background-color: #F0F8FF;
     }
     
-    /* Header Styling */
+    /* Header Styling: Fedus Orange */
     h1 {
-        color: #ff8c00; /* Dark Orange */
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        color: #FF8C00 !important;
+        font-weight: 800;
     }
     
-    /* Sidebar Styling */
+    /* Sidebar: Light Sky Blue and Orange Border */
     section[data-testid="stSidebar"] {
-        background-color: #e6f3ff; /* Light Sky Blue */
-        border-right: 2px solid #ffcc80; /* Light Orange Border */
+        background-color: #E6F3FF !important;
+        border-right: 3px solid #FFCC80;
+    }
+
+    /* Buttons: Orange Theme */
+    div.stButton > button {
+        background-color: #FF8C00;
+        color: white;
+        border-radius: 5px;
     }
     
-    /* Custom tooltips for long titles */
-    [data-testid="stDataFrame"] td:hover {
-        cursor: help;
-    }
-    
-    /* Search box styling */
-    .stTextInput>div>div>input {
-        border: 2px solid #ffcc80;
+    /* Dataframe Header: Ensure they stay visible */
+    [data-testid="stDataFrame"] {
+        border: 1px solid #FFCC80;
+        border-radius: 10px;
+        background-color: white;
     }
     </style>
-    """, unsafe_allow_index=True)
+    """, unsafe_allow_html=True)
 
 st.title("🔌 Fedus Master Price List")
-st.markdown("### Search across all 25+ categories | <span style='color: #ff8c00;'>Updated Live</span>", unsafe_allow_index=True)
+st.markdown("### Search across all 25+ categories | <span style='color: #FF8C00;'>Updated Live</span>", unsafe_allow_html=True)
 
 # -------------------------------------------------
-# Published XLSX URL (entire document)
+# Published XLSX URL
 # -------------------------------------------------
 XLSX_URL = (
     "https://docs.google.com/spreadsheets/d/e/"
@@ -59,29 +63,23 @@ XLSX_URL = (
 )
 
 # -------------------------------------------------
-# Robust downloader with retry + streaming (LOGIC UNCHANGED)
+# Robust downloader (LOGIC UNCHANGED)
 # -------------------------------------------------
 @st.cache_data(ttl=600)
 def download_xlsx_streaming(url: str) -> bytes:
     session = requests.Session()
-    retries = Retry(
-        total=3,
-        backoff_factor=1,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["GET"]
-    )
+    retries = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
     session.mount("https://", HTTPAdapter(max_retries=retries))
     headers = {"User-Agent": "Mozilla/5.0"}
     with session.get(url, headers=headers, stream=True, timeout=60) as r:
         r.raise_for_status()
         buffer = BytesIO()
         for chunk in r.iter_content(chunk_size=8192):
-            if chunk:
-                buffer.write(chunk)
+            if chunk: buffer.write(chunk)
         return buffer.getvalue()
 
 # -------------------------------------------------
-# Load all sheets safely (Logic preserved + skiprows for headers)
+# Load all sheets safely (skiprows=1 for your blue bar)
 # -------------------------------------------------
 @st.cache_data(ttl=600)
 def load_all_sheets(url: str):
@@ -90,21 +88,14 @@ def load_all_sheets(url: str):
         BytesIO(raw_bytes),
         sheet_name=None,
         engine="openpyxl",
-        skiprows=1 # Skips the blue bar to keep headers visible
+        skiprows=1 
     )
-    clean = {
-        name: df
-        for name, df in sheets.items()
-        if df is not None and not df.empty and len(df.columns) > 0
-    }
-    if not clean:
-        raise RuntimeError("All sheets were empty or unreadable.")
-    return clean
+    return {name: df for name, df in sheets.items() if df is not None and not df.empty}
 
 # -------------------------------------------------
 # Fetch data
 # -------------------------------------------------
-with st.spinner("Syncing all Fedus categories..."):
+with st.spinner("Syncing Fedus Categories..."):
     try:
         sheets = load_all_sheets(XLSX_URL)
     except Exception as e:
@@ -114,7 +105,7 @@ with st.spinner("Syncing all Fedus categories..."):
 sheet_names = list(sheets.keys())
 
 # -------------------------------------------------
-# Sidebar
+# Sidebar & Navigation
 # -------------------------------------------------
 st.sidebar.header("Navigation")
 selected_sheet = st.sidebar.selectbox("📂 Select Category", sheet_names)
@@ -122,17 +113,12 @@ global_search = st.sidebar.checkbox("🔍 Search across ALL categories")
 
 search_query = st.text_input(
     "🔍 Search products",
-    placeholder="Type here to search (e.g. Cat 6, Blue...)"
+    placeholder="Start typing to filter results instantly..."
 )
 
 def search_df(df, query):
-    if not query:
-        return df
-    return df[
-        df.astype(str)
-        .apply(lambda r: r.str.contains(query, case=False, na=False))
-        .any(axis=1)
-    ]
+    if not query: return df
+    return df[df.astype(str).apply(lambda r: r.str.contains(query, case=False, na=False)).any(axis=1)]
 
 # -------------------------------------------------
 # Display logic
@@ -145,23 +131,19 @@ if global_search:
         combined.append(temp)
     display_df = pd.concat(combined, ignore_index=True, sort=False)
     display_df = search_df(display_df, search_query)
-    st.subheader("🔎 Global Search Results")
 else:
     display_df = search_df(sheets[selected_sheet], search_query)
-    st.subheader(f"📂 Category: {selected_sheet}")
 
-# Display Row Count with orange highlight
-st.markdown(f"Rows found: **<span style='color: #ff8c00;'>{len(display_df):,}</span>**", unsafe_allow_index=True)
+st.markdown(f"Rows found: **<span style='color: #FF8C00;'>{len(display_df):,}</span>**", unsafe_allow_html=True)
 
 # -----------------------------------------------
-# Column configuration (Tooltips and Static Headers)
+# FIX: Column configuration for Hover and Width
 # -----------------------------------------------
 column_config = {
-    # This configuration helps with cell width and tooltips
     "Title": st.column_config.TextColumn(
         "Title",
-        help="Hover to see the full product title",
-        width="large"
+        help="Hover over any title to see the full product description",
+        width="large" # Makes the column wider by default
     )
 }
 
@@ -173,7 +155,6 @@ if "PRODUCT Gallery" in display_df.columns:
         "Gallery", display_text="Open"
     )
 
-# The dataframe with pinned headers (standard in current Streamlit)
 st.dataframe(
     display_df,
     use_container_width=True,
