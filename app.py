@@ -34,6 +34,7 @@ st.markdown("""
         color: #333 !important;
         opacity: 1 !important;
     }
+    /* Ensures sidebar content flows downward naturally */
     [data-testid="stSidebar"] img { margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
@@ -47,7 +48,7 @@ except:
     st.sidebar.markdown("### 🔌 Master Price List")
 
 # -------------------------------------------------
-# DATA LOADING (Logic Fixed for Sheet Order)
+# DATA LOADING
 # -------------------------------------------------
 XLSX_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTYXjBUAeE7-cuVA8tOk5q0rMlFgy0Zy98QB3Twlyth5agxLi9cCRDpG-JumnY_3w/pub?output=xlsx"
 
@@ -59,38 +60,35 @@ def load_all_sheets(url: str):
     headers = {"User-Agent": "Mozilla/5.0"}
     with session.get(url, headers=headers, stream=True, timeout=60) as r:
         r.raise_for_status()
-        # Loading with sheet_name=None returns an Ordered Dictionary
+        # Maintains original Excel tab order
         sheets = pd.read_excel(BytesIO(r.content), sheet_name=None, engine="openpyxl", skiprows=1)
     return sheets
 
 with st.spinner("Syncing Categories..."):
     try:
         raw_sheets = load_all_sheets(XLSX_URL)
-        # Filter to keep only valid, non-empty sheets
         sheets = {name: df for name, df in raw_sheets.items() if df is not None and not df.empty}
     except Exception as e:
-        st.error(f"❌ Sync Error: {e}")
+        st.error(f"❌ Error: {e}")
         st.stop()
 
 # -------------------------------------------------
-# NAVIGATION (Preserving Excel Order)
+# SIDEBAR NAVIGATION (Dropdown expands downwards)
 # -------------------------------------------------
-sheet_names = list(sheets.keys()) # This maintains the original Excel tab order
-
+sheet_names = list(sheets.keys())
 st.sidebar.header("Navigation")
-# 'Ethernet Cable Roll' will now be the default first choice
 selected_sheet = st.sidebar.selectbox("📂 Select Category", sheet_names, index=0)
 global_search = st.sidebar.checkbox("🔍 Search across ALL categories")
 
 # -------------------------------------------------
-# MAIN UI LAYOUT
+# MAIN DISPLAY
 # -------------------------------------------------
 st.title("Master Price List")
 
-# 1. Search Bar First
+# Search Bar at the top of the page
 search_query = st.text_input("🔍 Search products", placeholder="Type SKU or Title...")
 
-# 2. Category Header Second (Now appearing below search)
+# Category Display appears below Search
 if global_search:
     st.markdown('<div class="category-header">🔎 Global Search (All Categories)</div>', unsafe_allow_html=True)
 else:
@@ -100,9 +98,6 @@ def search_df(df, query):
     if not query: return df
     return df[df.astype(str).apply(lambda r: r.str.contains(query, case=False, na=False)).any(axis=1)]
 
-# -------------------------------------------------
-# DATA PROCESSING
-# -------------------------------------------------
 if global_search:
     combined = []
     for name, df in sheets.items():
@@ -116,9 +111,7 @@ else:
 
 st.write(f"Rows found: **{len(display_df):,}**")
 
-# -----------------------------------------------
-# STICKY COLUMN CONFIGURATION
-# -----------------------------------------------
+# Sticky Column Config
 column_config = {
     "Title": st.column_config.TextColumn("Title", help="Hover to see full name", width="medium", pinned=True),
     "ASIN": st.column_config.TextColumn("ASIN", width="small", pinned=True)
@@ -127,10 +120,6 @@ column_config = {
 if "Image" in display_df.columns:
     column_config["Image"] = st.column_config.ImageColumn("Preview", width="small", pinned=True)
 
-if "PRODUCT Gallery" in display_df.columns:
-    column_config["PRODUCT Gallery"] = st.column_config.LinkColumn("Gallery", display_text="Open")
-
-# 3. Data Table
 st.dataframe(
     display_df,
     use_container_width=True,
