@@ -34,8 +34,6 @@ st.markdown("""
         color: #333 !important;
         opacity: 1 !important;
     }
-    /* Ensures sidebar content flows downward naturally */
-    [data-testid="stSidebar"] img { margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -48,7 +46,7 @@ except:
     st.sidebar.markdown("### 🔌 Master Price List")
 
 # -------------------------------------------------
-# DATA LOADING
+# DATA LOADING (Logic Unchanged)
 # -------------------------------------------------
 XLSX_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTYXjBUAeE7-cuVA8tOk5q0rMlFgy0Zy98QB3Twlyth5agxLi9cCRDpG-JumnY_3w/pub?output=xlsx"
 
@@ -60,7 +58,6 @@ def load_all_sheets(url: str):
     headers = {"User-Agent": "Mozilla/5.0"}
     with session.get(url, headers=headers, stream=True, timeout=60) as r:
         r.raise_for_status()
-        # Maintains original Excel tab order
         sheets = pd.read_excel(BytesIO(r.content), sheet_name=None, engine="openpyxl", skiprows=1)
     return sheets
 
@@ -73,27 +70,24 @@ with st.spinner("Syncing Categories..."):
         st.stop()
 
 # -------------------------------------------------
-# SIDEBAR NAVIGATION (Dropdown expands downwards)
+# NAVIGATION
 # -------------------------------------------------
 sheet_names = list(sheets.keys())
 st.sidebar.header("Navigation")
 selected_sheet = st.sidebar.selectbox("📂 Select Category", sheet_names, index=0)
 global_search = st.sidebar.checkbox("🔍 Search across ALL categories")
 
-# -------------------------------------------------
-# MAIN DISPLAY
-# -------------------------------------------------
 st.title("Master Price List")
-
-# Search Bar at the top of the page
 search_query = st.text_input("🔍 Search products", placeholder="Type SKU or Title...")
 
-# Category Display appears below Search
 if global_search:
     st.markdown('<div class="category-header">🔎 Global Search (All Categories)</div>', unsafe_allow_html=True)
 else:
     st.markdown(f'<div class="category-header">📂 Category: {selected_sheet}</div>', unsafe_allow_html=True)
 
+# -------------------------------------------------
+# DATA PROCESSING
+# -------------------------------------------------
 def search_df(df, query):
     if not query: return df
     return df[df.astype(str).apply(lambda r: r.str.contains(query, case=False, na=False)).any(axis=1)]
@@ -111,14 +105,27 @@ else:
 
 st.write(f"Rows found: **{len(display_df):,}**")
 
-# Sticky Column Config
+# -------------------------------------------------
+# COLUMN CONFIGURATION (Handling Drive Links)
+# -------------------------------------------------
 column_config = {
     "Title": st.column_config.TextColumn("Title", help="Hover to see full name", width="medium", pinned=True),
     "ASIN": st.column_config.TextColumn("ASIN", width="small", pinned=True)
 }
 
+# 1. Handle Preview Images if they exist
 if "Image" in display_df.columns:
     column_config["Image"] = st.column_config.ImageColumn("Preview", width="small", pinned=True)
+
+# 2. Handle Google Drive Image Links
+# This looks for any column with "Drive" or "Link" in the name and makes it clickable
+for col in display_df.columns:
+    if "drive" in col.lower() or "link" in col.lower() or "gallery" in col.lower():
+        column_config[col] = st.column_config.LinkColumn(
+            col, 
+            display_text="View Image 🔗", # Makes it a clean button instead of a long URL
+            help="Click to open the Google Drive image"
+        )
 
 st.dataframe(
     display_df,
