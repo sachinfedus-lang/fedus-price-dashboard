@@ -34,6 +34,7 @@ st.markdown("""
         color: #333 !important;
         opacity: 1 !important;
     }
+    [data-testid="stSidebar"] img { margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -58,6 +59,7 @@ def load_all_sheets(url: str):
     headers = {"User-Agent": "Mozilla/5.0"}
     with session.get(url, headers=headers, stream=True, timeout=60) as r:
         r.raise_for_status()
+        # skiprows=1 to keep proper headers
         sheets = pd.read_excel(BytesIO(r.content), sheet_name=None, engine="openpyxl", skiprows=1)
     return sheets
 
@@ -70,13 +72,16 @@ with st.spinner("Syncing Categories..."):
         st.stop()
 
 # -------------------------------------------------
-# NAVIGATION
+# NAVIGATION (Dropdown Downwards)
 # -------------------------------------------------
 sheet_names = list(sheets.keys())
 st.sidebar.header("Navigation")
 selected_sheet = st.sidebar.selectbox("📂 Select Category", sheet_names, index=0)
 global_search = st.sidebar.checkbox("🔍 Search across ALL categories")
 
+# -------------------------------------------------
+# MAIN UI & SEARCH
+# -------------------------------------------------
 st.title("Master Price List")
 search_query = st.text_input("🔍 Search products", placeholder="Type SKU or Title...")
 
@@ -85,9 +90,6 @@ if global_search:
 else:
     st.markdown(f'<div class="category-header">📂 Category: {selected_sheet}</div>', unsafe_allow_html=True)
 
-# -------------------------------------------------
-# DATA PROCESSING
-# -------------------------------------------------
 def search_df(df, query):
     if not query: return df
     return df[df.astype(str).apply(lambda r: r.str.contains(query, case=False, na=False)).any(axis=1)]
@@ -105,28 +107,32 @@ else:
 
 st.write(f"Rows found: **{len(display_df):,}**")
 
-# -------------------------------------------------
-# COLUMN CONFIGURATION (Handling Drive Links)
-# -------------------------------------------------
+# -----------------------------------------------
+# COLUMN CONFIGURATION (DRIVE LINK FIX)
+# -----------------------------------------------
 column_config = {
     "Title": st.column_config.TextColumn("Title", help="Hover to see full name", width="medium", pinned=True),
     "ASIN": st.column_config.TextColumn("ASIN", width="small", pinned=True)
 }
 
-# 1. Handle Preview Images if they exist
 if "Image" in display_df.columns:
     column_config["Image"] = st.column_config.ImageColumn("Preview", width="small", pinned=True)
 
-# 2. Handle Google Drive Image Links
-# This looks for any column with "Drive" or "Link" in the name and makes it clickable
+# THE LINK FIX: This loop checks every column for Drive links or URLs
 for col in display_df.columns:
-    if "drive" in col.lower() or "link" in col.lower() or "gallery" in col.lower():
+    # We check the first non-null value to see if it's a link
+    first_val = str(display_df[col].dropna().iloc[0]) if not display_df[col].dropna().empty else ""
+    
+    if "http" in first_val or "drive.google" in first_val.lower():
         column_config[col] = st.column_config.LinkColumn(
             col, 
-            display_text="View Image 🔗", # Makes it a clean button instead of a long URL
-            help="Click to open the Google Drive image"
+            display_text="Open Link 🔗", 
+            help="Click to open the file in Google Drive"
         )
 
+# -----------------------------------------------
+# DATA DISPLAY
+# -----------------------------------------------
 st.dataframe(
     display_df,
     use_container_width=True,
