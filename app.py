@@ -34,7 +34,6 @@ st.markdown("""
         color: #333 !important;
         opacity: 1 !important;
     }
-    [data-testid="stSidebar"] img { margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -47,7 +46,7 @@ except:
     st.sidebar.markdown("### 🔌 Master Price List")
 
 # -------------------------------------------------
-# DATA LOADING (Logic Unchanged)
+# DATA LOADING (ORDER PRESERVED)
 # -------------------------------------------------
 XLSX_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTYXjBUAeE7-cuVA8tOk5q0rMlFgy0Zy98QB3Twlyth5agxLi9cCRDpG-JumnY_3w/pub?output=xlsx"
 
@@ -59,11 +58,10 @@ def load_all_sheets(url: str):
     headers = {"User-Agent": "Mozilla/5.0"}
     with session.get(url, headers=headers, stream=True, timeout=60) as r:
         r.raise_for_status()
-        # skiprows=1 to keep proper headers
-        sheets = pd.read_excel(BytesIO(r.content), sheet_name=None, engine="openpyxl", skiprows=1)
-    return sheets
+        # Maintains Excel tab order
+        return pd.read_excel(BytesIO(r.content), sheet_name=None, engine="openpyxl", skiprows=1)
 
-with st.spinner("Syncing Categories..."):
+with st.spinner("Syncing..."):
     try:
         raw_sheets = load_all_sheets(XLSX_URL)
         sheets = {name: df for name, df in raw_sheets.items() if df is not None and not df.empty}
@@ -72,7 +70,7 @@ with st.spinner("Syncing Categories..."):
         st.stop()
 
 # -------------------------------------------------
-# NAVIGATION (Dropdown Downwards)
+# NAVIGATION (Fixed Order)
 # -------------------------------------------------
 sheet_names = list(sheets.keys())
 st.sidebar.header("Navigation")
@@ -80,62 +78,43 @@ selected_sheet = st.sidebar.selectbox("📂 Select Category", sheet_names, index
 global_search = st.sidebar.checkbox("🔍 Search across ALL categories")
 
 # -------------------------------------------------
-# MAIN UI & SEARCH
+# MAIN UI
 # -------------------------------------------------
 st.title("Master Price List")
 search_query = st.text_input("🔍 Search products", placeholder="Type SKU or Title...")
 
 if global_search:
-    st.markdown('<div class="category-header">🔎 Global Search (All Categories)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="category-header">🔎 Global Search Results</div>', unsafe_allow_html=True)
 else:
     st.markdown(f'<div class="category-header">📂 Category: {selected_sheet}</div>', unsafe_allow_html=True)
 
+# -------------------------------------------------
+# PROCESSING & DRIVE LINK LOGIC
+# -------------------------------------------------
 def search_df(df, query):
     if not query: return df
     return df[df.astype(str).apply(lambda r: r.str.contains(query, case=False, na=False)).any(axis=1)]
 
 if global_search:
-    combined = []
-    for name, df in sheets.items():
-        temp = df.copy()
-        temp.insert(0, "Category", name)
-        combined.append(temp)
-    display_df = pd.concat(combined, ignore_index=True, sort=False)
-    display_df = search_df(display_df, search_query)
+    combined = [df.assign(Category=name) for name, df in sheets.items()]
+    display_df = search_df(pd.concat(combined, ignore_index=True), search_query)
 else:
     display_df = search_df(sheets[selected_sheet], search_query)
 
-st.write(f"Rows found: **{len(display_df):,}**")
-
-# -----------------------------------------------
-# COLUMN CONFIGURATION (DRIVE LINK FIX)
-# -----------------------------------------------
+# DRIVE LINK DETECTION
 column_config = {
-    "Title": st.column_config.TextColumn("Title", help="Hover to see full name", width="medium", pinned=True),
+    "Title": st.column_config.TextColumn("Title", width="medium", pinned=True, help="Hover for full name"),
     "ASIN": st.column_config.TextColumn("ASIN", width="small", pinned=True)
 }
 
 if "Image" in display_df.columns:
     column_config["Image"] = st.column_config.ImageColumn("Preview", width="small", pinned=True)
 
-# THE LINK FIX: This loop checks every column for Drive links or URLs
+# Scan for ANY column with Drive links
 for col in display_df.columns:
-    # We check the first non-null value to see if it's a link
-    first_val = str(display_df[col].dropna().iloc[0]) if not display_df[col].dropna().empty else ""
-    
-    if "http" in first_val or "drive.google" in first_val.lower():
-        column_config[col] = st.column_config.LinkColumn(
-            col, 
-            display_text="Open Link 🔗", 
-            help="Click to open the file in Google Drive"
-        )
+    sample = str(display_df[col].dropna().iloc[0]) if not display_df[col].dropna().empty else ""
+    if "http" in sample or "drive.google" in sample.lower():
+        column_config[col] = st.column_config.LinkColumn(col, display_text="Open Link 🔗")
 
-# -----------------------------------------------
-# DATA DISPLAY
-# -----------------------------------------------
-st.dataframe(
-    display_df,
-    use_container_width=True,
-    hide_index=True,
-    column_config=column_config
-)
+st.write(f"Rows found: **{len(display_df):,}**")
+st.dataframe(display_df, use_container_width=True, hide_index=True, column_config=column_config)
